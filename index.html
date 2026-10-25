@@ -373,7 +373,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     view: 'play', repo: [], source: '', loading: true, error: '',
     teams: [{ name: 'Equipo 1', members: '' }, { name: 'Equipo 2', members: '' }],
     game: null, confirm: false, msg: '',
-    local: { author: '', added: [], edits: {}, deleted: {}, sent: {} },
+    local: { author: '', added: [], edits: {}, deleted: {}, sent: {}, sentAt: {} },
     form: null, formErr: '', newPerson: '', newCat: '', pack: null, showAll: false, filt: -1, toast: ''
   };
   var confirmTimer = null, toastTimer = null;
@@ -402,6 +402,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       seen[q.id] = out.length; out.push(e);
     });
     S.local.added.forEach(function (q) {
+      if (S.local.deleted[q.id]) return;
       if (seen[q.id] !== undefined) out[seen[q.id]] = q; else out.push(q);
     });
     return out;
@@ -425,6 +426,9 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   function catIdx(name) { var i = CATS.findIndex(function (c) { return norm(c) === norm(name); }); return i < 0 ? 0 : i; }
 
   /* ---------- Excel: leer y escribir ---------- */
+  /* preguntas.xlsx es la base. Cada envío de una amiga es un Excel pequeño en la carpeta envios/
+     (nuevas, editadas y borradas). La web los aplica en orden encima de la base. */
+  var REPO = 'CiaSeg/trivial', BRANCH = 'master', ENVDIR = 'envios/';
   function col(H, test) { for (var i = 0; i < H.length; i++) if (test(norm(H[i]))) return i; return -1; }
   function rowsToQs(wb) {
     var name = wb.SheetNames.find(function (n) { return norm(n).indexOf('pregunta') > -1; }) || wb.SheetNames[0];
@@ -442,53 +446,91 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       img: col(H, function (h) { return h.indexOf('imagen') > -1 && h.indexOf('respuesta') < 0; }),
       img2: col(H, function (h) { return h.indexOf('imagen') > -1 && h.indexOf('respuesta') > -1; }),
       au: col(H, function (h) { return h.indexOf('autor') === 0; }),
-      id: col(H, function (h) { return h === 'id'; })
+      id: col(H, function (h) { return h === 'id'; }),
+      act: col(H, function (h) { return h.indexOf('accion') === 0; })
     };
     if (C.cat < 0) throw new Error('Falta la columna «Categoría» en el Excel.');
     var qs = [], ids = {};
     rows.slice(hi + 1).forEach(function (r) {
-      var c = String(r[C.cat] || '').trim(), q = String(r[C.q] || '').trim();
-      if (!c || !q) return;
       function v(k) { return C[k] > -1 ? String(r[C[k]] || '').trim() : ''; }
-      var id = v('id') || ('x-' + norm(c) + '|' + norm(q));
+      var c = v('cat'), q = v('q'), id = v('id'), del = /borr|elimin/.test(norm(v('act')));
+      if (!del && (!c || !q)) return;
+      if (!id) { if (del) return; id = 'x-' + norm(c) + '|' + norm(q); }
       while (ids[id]) id += '+';
       ids[id] = 1;
       qs.push({
         id: id, cat: c, hard: /dific|quesito|alta|dura|hard/.test(norm(v('dif'))),
         people: v('per'), q: q, opts: splitList(v('opt'), /;|\n|\|/), a: v('a'),
-        img: safeImg(v('img')), img2: safeImg(v('img2')), author: v('au')
+        img: safeImg(v('img')), img2: safeImg(v('img2')), author: v('au'), del: del
       });
     });
     return qs;
   }
-  function qsToWorkbook(qs) {
-    var aoa = [HEAD].concat(qs.map(function (q) {
-      return [q.cat, q.hard ? 'Difícil' : 'Normal', q.people || '', q.q, (q.opts || []).join('; '), q.a || '', q.img || '', q.img2 || '', q.author || '', q.id];
+  function qsToWorkbook(qs, envio) {
+    var head = envio ? HEAD.concat(['Acción']) : HEAD;
+    var aoa = [head].concat(qs.map(function (q) {
+      var r = [q.cat, q.hard ? 'Difícil' : 'Normal', q.people || '', q.q, (q.opts || []).join('; '), q.a || '', q.img || '', q.img2 || '', q.author || '', q.id];
+      if (envio) r.push(q.del ? 'Borrar' : (S.repo.some(function (x) { return x.id === q.id; }) ? 'Editar' : 'Nueva'));
+      return r;
     }));
     var ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [20, 11, 24, 60, 40, 30, 22, 22, 14, 16].map(function (w) { return { wch: w }; });
-    var ins = XLSX.utils.aoa_to_sheet([
-      ['Cómo rellenar la hoja «Preguntas»'], [''],
-      ['Lo más fácil es crear las preguntas desde la web, en la pestaña «Crear preguntas». Si prefieres el Excel:'],
-      ['Categoría: el nombre de la categoría. Las 6 primeras que aparezcan toman los colores azul, rosa, verde, naranja, amarillo y rojo.'],
-      ['Dificultad: «Normal» o «Difícil». Las difíciles salen en las casillas de quesito y en la pregunta final.'],
-      ['Persona: si esa persona está en el equipo que juega, la pregunta no le sale. Varias, separadas por comas.'],
-      ['Opciones: vacío si es abierta. Si es tipo test, sepáralas con punto y coma (;).'],
-      ['Imagen pregunta / Imagen respuesta: nombre del archivo de la foto dentro de la carpeta «imagenes» del proyecto.'],
-      ['Autora e ID: los rellena la web. Si añades filas a mano puedes dejarlos vacíos.']
-    ]);
-    ins['!cols'] = [{ wch: 110 }];
+    ws['!cols'] = [20, 11, 24, 60, 40, 30, 22, 22, 14, 16, 10].map(function (w) { return { wch: w }; });
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Preguntas');
-    XLSX.utils.book_append_sheet(wb, ins, 'Instrucciones');
     return wb;
   }
+  function fetchXlsx(url) {
+    return fetch(url + '?v=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('No encuentro ' + url + ' junto a la página.'); return r.arrayBuffer(); })
+      .then(function (buf) { return rowsToQs(XLSX.read(buf, { type: 'array' })); });
+  }
+  function listEnvios() {
+    return fetch('https://api.github.com/repos/' + REPO + '/contents/' + ENVDIR.slice(0, -1) + '?ref=' + BRANCH + '&t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (r.status === 404) return []; if (!r.ok) throw new Error('api'); return r.json(); })
+      .then(function (list) { return (Array.isArray(list) ? list : []).map(function (x) { return x.name; }).filter(function (n) { return /\.xlsx$/i.test(n); }).sort(); });
+  }
+  function applyEnvio(base, rows) {
+    var idx = {};
+    base.forEach(function (q, i) { if (q) idx[q.id] = i; });
+    rows.forEach(function (q) {
+      var i = idx[q.id];
+      if (q.del) { if (i !== undefined) base[i] = null; delete idx[q.id]; return; }
+      if (i !== undefined) base[i] = q; else { idx[q.id] = base.length; base.push(q); }
+    });
+    return base;
+  }
+  /* Lo que ya está publicado igual que en local deja de contar como cambio local */
+  function prune() {
+    var byId = {};
+    S.repo.forEach(function (q) { byId[q.id] = q; });
+    /* Si lo publicado es igual, o es más reciente que lo que envié, manda lo publicado */
+    function stale(q) {
+      var r = byId[q.id];
+      if (!r) return false;
+      if (sig(r) === sig(q)) return true;
+      var at = S.local.sentAt[q.id];
+      return S.local.sent[q.id] === sig(q) && !!r.t && !!at && r.t >= at;
+    }
+    S.local.added = S.local.added.filter(function (q) { return !stale(q); });
+    Object.keys(S.local.edits).forEach(function (id) { if (stale(S.local.edits[id])) delete S.local.edits[id]; });
+    Object.keys(S.local.deleted).forEach(function (id) { if (!byId[id] && S.local.sent[id] === 'DEL') delete S.local.deleted[id]; });
+    saveLocal();
+  }
   function loadExcel() {
-    S.loading = true; S.error = ''; render();
+    S.loading = true; S.error = ''; S.envNote = ''; render();
     if (typeof XLSX === 'undefined') { S.loading = false; S.error = 'No se ha podido cargar el lector de Excel. Revisa la conexión a internet.'; refresh(); render(); return; }
-    fetch(EXCEL + '?v=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('No encuentro ' + EXCEL + ' junto a la página.'); return r.arrayBuffer(); })
-      .then(function (buf) { S.repo = rowsToQs(XLSX.read(buf, { type: 'array' })); S.source = EXCEL; S.loading = false; refresh(); render(); })
+    fetchXlsx(EXCEL)
+      .then(function (base) {
+        return listEnvios().catch(function () { S.envNote = 'GitHub no ha respondido y faltan los últimos envíos. Recarga en un rato.'; return []; })
+          .then(function (names) {
+            S.envCount = names.length;
+            return names.reduce(function (p, n) {
+              var t = (n.match(/^(\d{8}-\d{6})/) || [])[1] || '';
+              return p.then(function (acc) { return fetchXlsx(ENVDIR + encodeURIComponent(n)).then(function (rows) { rows.forEach(function (q) { q.t = t; }); return applyEnvio(acc, rows); }).catch(function () { return acc; }); });
+            }, Promise.resolve(base));
+          });
+      })
+      .then(function (qs) { S.repo = qs.filter(Boolean); S.source = EXCEL; S.loading = false; prune(); refresh(); render(); })
       .catch(function (e) {
         S.loading = false;
         S.error = location.protocol === 'file:'
@@ -498,17 +540,20 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       });
   }
 
-  /* ---------- Paquetes .zip (enviar e importar) ---------- */
-  function buildZip(qs, fname) {
+  /* ---------- Paquete .zip con los cambios ---------- */
+  function stamp() {
+    var d = new Date(); function p(n) { return String(n).padStart(2, '0'); }
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+  function buildZip(rows, fname, xlsxPath) {
     var zip = new JSZip(), names = {};
-    var wb = qsToWorkbook(qs);
-    zip.file('preguntas.xlsx', XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
-    qs.forEach(function (q) { [q.img, q.img2].forEach(function (n) { if (n && IMG[n]) names[n] = 1; }); });
+    zip.file(xlsxPath, XLSX.write(qsToWorkbook(rows, true), { type: 'array', bookType: 'xlsx' }));
+    rows.forEach(function (q) { if (!q.del) [q.img, q.img2].forEach(function (n) { if (n && IMG[n]) names[n] = 1; }); });
     var jobs = Object.keys(names).map(function (n) {
       return getImgBlob(n).then(function (b) { if (b) zip.file(IMGDIR + n, b); });
     });
     return Promise.all(jobs).then(function () { return zip.generateAsync({ type: 'blob', mimeType: 'application/zip' }); })
-      .then(function (blob) { return { blob: blob, name: fname, count: qs.length, imgs: Object.keys(names).length }; });
+      .then(function (blob) { return { blob: blob, name: fname, count: rows.length, imgs: Object.keys(names).length }; });
   }
   function download(blob, name) {
     var a = document.createElement('a');
@@ -518,35 +563,6 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   }
   function canShare(blob, name) {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: 'application/zip' })] })); } catch (e) { return false; }
-  }
-  function mergeQs(qs) {
-    var repoIds = {};
-    S.repo.forEach(function (q) { repoIds[q.id] = 1; });
-    qs.forEach(function (q) {
-      if (repoIds[q.id]) { S.local.edits[q.id] = q; delete S.local.deleted[q.id]; }
-      else {
-        var i = S.local.added.findIndex(function (a) { return a.id === q.id; });
-        if (i > -1) S.local.added[i] = q; else S.local.added.push(q);
-      }
-    });
-    saveLocal(); refresh();
-    return qs.length;
-  }
-  function importZip(file) {
-    return JSZip.loadAsync(file).then(function (zip) {
-      var x = zip.file(/(^|\/)preguntas[^\/]*\.xlsx$/i)[0] || zip.file(/\.xlsx$/i)[0];
-      if (!x) throw new Error('Ese archivo no tiene preguntas dentro.');
-      return x.async('arraybuffer').then(function (buf) {
-        var qs = rowsToQs(XLSX.read(buf, { type: 'array' }));
-        var need = {};
-        qs.forEach(function (q) { [q.img, q.img2].forEach(function (n) { if (n) need[n] = 1; }); });
-        var jobs = Object.keys(need).map(function (n) {
-          var f = zip.file(IMGDIR + n) || zip.file(new RegExp('(^|/)' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'))[0];
-          return f ? f.async('blob').then(function (b) { return putImg(n, new Blob([b], { type: 'image/jpeg' })); }) : null;
-        });
-        return Promise.all(jobs).then(function () { return mergeQs(qs); });
-      });
-    });
   }
 
   /* ---------- Dibujo ---------- */
@@ -749,80 +765,66 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     if (S.form) splitList(S.form.people, /,/).forEach(add);
     return out.sort(function (a, b) { return a.localeCompare(b, 'es'); });
   }
-  function localAll() {
-    var edits = Object.keys(S.local.edits).map(function (id) { return S.local.edits[id]; });
-    return S.local.added.concat(edits);
-  }
-  function isMine(q) { return !q.author || norm(q.author) === norm(S.local.author); }
-  function mine() { return localAll().filter(isMine); }
-  function received() { return localAll().filter(function (q) { return !isMine(q); }); }
   function isOrg() { return norm(S.local.author) === 'lucia'; }
-  function sig(q) { return JSON.stringify([q.cat, q.hard, q.people, q.q, q.opts, q.a, q.img, q.img2]); }
-  function isSent(q) { return S.local.sent[q.id] === sig(q); }
-  function pending() { return mine().filter(function (q) { return !isSent(q); }); }
-
-  /* ---------- Enviar a Lucía ---------- */
-  var CODE_RE = /TRIVIAL#([A-Za-z0-9+\/=]+)#/g;
-  function encodeQs(qs) {
-    var json = JSON.stringify(qs.map(function (q) { return { id: q.id, c: q.cat, h: q.hard ? 1 : 0, p: q.people || '', q: q.q, o: q.opts || [], a: q.a || '', u: q.author || '' }; }));
-    return btoa(unescape(encodeURIComponent(json)));
+  function isMine(q) { return !!S.local.author && norm(q.author) === norm(S.local.author); }
+  function canEdit(q) { return isOrg() || isMine(q); }
+  function mine() { return all().filter(isMine); }
+  function sig(q) { return JSON.stringify([q.cat, !!q.hard, q.people || '', q.q, q.opts || [], q.a || '', q.img || '', q.img2 || '']); }
+  function inRepo(id) { return S.repo.find(function (r) { return r.id === id; }); }
+  /* Cambios hechos en este dispositivo que aún no se han enviado */
+  function changes() {
+    var out = [];
+    S.local.added.forEach(function (q) { if (S.local.sent[q.id] !== sig(q)) out.push(q); });
+    Object.keys(S.local.edits).forEach(function (id) {
+      var q = S.local.edits[id];
+      if (!S.local.deleted[id] && S.local.sent[id] !== sig(q)) out.push(q);
+    });
+    Object.keys(S.local.deleted).forEach(function (id) {
+      if (S.local.sent[id] === 'DEL') return;
+      var q = S.local.deleted[id];
+      out.push(Object.assign({}, typeof q === 'object' ? q : (inRepo(id) || { id: id, cat: '', q: '' }), { id: id, del: true }));
+    });
+    return out;
   }
-  function decodeQs(b64) {
-    var arr = JSON.parse(decodeURIComponent(escape(atob(b64))));
-    return arr.map(function (x) {
-      return { id: String(x.id || ('q-' + rid())), cat: String(x.c || '').slice(0, 40), hard: !!x.h, people: String(x.p || ''), q: String(x.q || ''),
-        opts: Array.isArray(x.o) ? x.o.map(String) : [], a: String(x.a || ''), img: '', img2: '', author: String(x.u || '') };
-    }).filter(function (q) { return q.cat && q.q; });
+  function status(q) {
+    var r = inRepo(q.id);
+    if (r && sig(r) === sig(q)) return '<span class="tag-ok">✓ Publicada</span>';
+    if (S.local.sent[q.id] === sig(q)) return '<span class="tag-ok">✓ Enviada</span>';
+    return '<strong>Sin enviar</strong>';
   }
-  function shareText(qs, withCode) {
-    var t = '🎄 ' + (qs.length === 1 ? 'Mi pregunta' : 'Mis ' + qs.length + ' preguntas') + ' para el Trivial del Lore (' + S.local.author + '):\n\n' +
-      qs.map(function (q, i) { return (i + 1) + '. ' + q.q + ' (' + q.cat + (q.hard ? ', difícil' : '') + ')'; }).join('\n');
-    if (withCode) t += '\n\n👇 Lucía: copia todo este mensaje y pégalo en la web\nTRIVIAL#' + encodeQs(qs) + '#';
-    return t;
-  }
+  function safeName() { return norm(S.local.author).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'amiga'; }
   function prepPack() {
-    var p = pending().filter(function (q) { return q.img || q.img2; });
-    if (!p.length) { S.pack = null; return; }
-    var key = p.map(sig).join('|');
+    var ch = changes();
+    if (!ch.length) { S.pack = null; return; }
+    var key = ch.map(function (q) { return q.del ? 'D' + q.id : sig(q); }).join('|');
     if ((S.pack && S.pack.key === key) || S.packing === key) return;
     S.packing = key;
-    var safe = norm(S.local.author).replace(/[^a-z0-9]+/g, '-') || 'amiga';
-    buildZip(pending(), 'preguntas-' + safe + '.zip').then(function (pk) {
+    var st = stamp();
+    buildZip(ch, 'trivial-' + safeName() + '-' + st + '.zip', ENVDIR + st + '-' + safeName() + '.xlsx').then(function (pk) {
       if (S.packing !== key) return;
-      pk.key = key; S.pack = pk; S.packing = '';
+      pk.key = key; pk.rows = ch; pk.stamp = st; S.pack = pk; S.packing = '';
       if (S.view === 'make' && !S.form) render();
     }).catch(function () { S.packing = ''; });
   }
-  function markSent(qs) { qs.forEach(function (q) { S.local.sent[q.id] = sig(q); }); saveLocal(); render(); }
-  function sendNow() {
-    var qs = pending();
-    if (!qs.length) return;
-    var photos = qs.some(function (q) { return q.img || q.img2; });
-    if (!photos) {
-      var text = shareText(qs, true);
-      if (navigator.share) {
-        navigator.share({ text: text }).then(function () { markSent(qs); toast('¡Enviado! Gracias 💛'); })
-          .catch(function (e) { if (e && e.name === 'AbortError') return; window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank'); markSent(qs); });
-      } else {
-        window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
-        markSent(qs);
-      }
-      return;
-    }
-    var pk = S.pack;
-    if (!pk) { toast('Preparando las fotos… pulsa otra vez en un momento.'); prepPack(); return; }
-    var file = new File([pk.blob], pk.name, { type: 'application/zip' });
-    if (canShare(pk.blob, pk.name)) {
-      navigator.share({ files: [file], title: 'Preguntas del Trivial', text: shareText(qs, false) })
-        .then(function () { markSent(qs); toast('¡Enviado! Gracias 💛'); })
-        .catch(function (e) { if (e && e.name === 'AbortError') return; download(pk.blob, pk.name); markSent(qs); toast('Descargado. Mándale el archivo a Lucía por WhatsApp.'); });
-    } else {
-      download(pk.blob, pk.name); markSent(qs);
-      toast('Descargado. Mándale el archivo a Lucía por WhatsApp.');
-    }
+  function markSent(rows, st) {
+    rows.forEach(function (q) { S.local.sent[q.id] = q.del ? 'DEL' : sig(q); S.local.sentAt[q.id] = st; });
+    S.pack = null; saveLocal(); render();
   }
+  function sendNow() {
+    var pk = S.pack;
+    if (!pk) { prepPack(); toast('Preparando el archivo… pulsa otra vez en un momento.'); return; }
+    var rows = pk.rows, file = new File([pk.blob], pk.name, { type: 'application/zip' });
+    var done = isOrg() ? 'Descargado. Descomprímelo en la carpeta del proyecto y haz Commit and Push.' : 'Descargado. Mándale el archivo a Lucía por WhatsApp.';
+    if (!isOrg() && canShare(pk.blob, pk.name)) {
+      navigator.share({ files: [file], title: 'Preguntas del Trivial', text: S.local.author + ' te manda preguntas para el Trivial 🎄' })
+        .then(function () { markSent(rows, pk.stamp); toast('¡Enviado! Gracias 💛'); })
+        .catch(function (e) { if (e && e.name === 'AbortError') return; download(pk.blob, pk.name); markSent(rows, pk.stamp); toast(done); });
+    } else { download(pk.blob, pk.name); markSent(rows, pk.stamp); toast(done); }
+  }
+
   function qMeta(q) {
     var bits = [q.cat, q.hard ? 'Difícil' : 'Normal'];
+    if (isOrg() && q.author && !isMine(q)) bits.unshift('De ' + q.author);
     if (q.opts && q.opts.length) bits.push('Tipo test');
     if (q.img || q.img2) bits.push('Con foto');
     if (q.people) bits.push('No para: ' + q.people);
@@ -830,7 +832,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   }
   function qItem(q, acts) {
     return '<li class="myq k' + catIdx(q.cat) + '"><span class="bar"></span><div class="body"><div class="t">' + esc(q.q) + '</div>' +
-      '<div class="m">' + esc(qMeta(q)) + '</div></div><div class="acts">' + acts + '</div></li>';
+      '<div class="m">' + (q.statusHtml || '') + esc(qMeta(q)) + '</div></div><div class="acts">' + acts + '</div></li>';
   }
 
   function formView() {
@@ -872,82 +874,57 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       '</form></section>';
   }
 
+  function delBtn(q) {
+    return '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (S.delConfirm === q.id ? '¿Seguro? Toca otra vez' : 'Borrar') + '</button>';
+  }
+  function editBtn(q) { return '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button>'; }
   function makeView() {
     if (!S.local.author) {
       return '<section class="card"><h2>¡Hola! ¿Cómo te llamas?</h2>' +
-        '<p class="lead">Así Lucía sabrá de quién son las preguntas que le envíes.</p>' +
+        '<p class="lead">Así Lucía sabrá de quién son las preguntas, y podrás editar y borrar las tuyas.</p>' +
         '<div class="addp"><input type="text" id="me" maxlength="30" placeholder="Tu nombre" autocomplete="given-name"><button class="btn" data-action="setme">Empezar</button></div></section>';
     }
     if (S.form) return formView();
-    var my = mine();
+    var my = mine(), ch = changes(), org = isOrg();
     var list = my.length ? '<ul class="mylist">' + my.map(function (q) {
-      var isEdit = !!S.local.edits[q.id];
-      return qItem(q, '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button>' +
-        '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (isEdit ? 'Deshacer cambios' : 'Borrar') + '</button>')
-        .replace('<div class="m">', '<div class="m">' + (isOrg() ? '' : (isSent(q) ? '<span class="tag-ok">✓ Enviada</span> · ' : '<strong>Sin enviar</strong> · ')));
-    }).join('') + '</ul>' : '<div class="empty">Aún no has creado ninguna pregunta.</div>';
+      return qItem(Object.assign({}, q, { statusHtml: status(q) + ' · ' }), editBtn(q) + delBtn(q));
+    }).join('') + '</ul>' : '<div class="empty">' + (S.loading ? 'Cargando…' : 'Aún no has creado ninguna pregunta.') + '</div>';
 
-    var send = '', pend = isOrg() ? [] : pending();
-    if (my.length && isOrg()) send = '<p class="stat" style="margin-top:14px">Tus preguntas ya cuentan para jugar en este dispositivo. Para publicarlas, usa el paso 3 de tu zona de organizadora.</p>';
     var sendCard = '';
-    if (pend.length) {
-      var photos = pend.some(function (q) { return q.img || q.img2; }), busy = photos && !S.pack;
-      if (busy) prepPack();
-      sendCard = '<section class="card sendcard"><h2>' + (pend.length === 1 ? 'Tienes 1 pregunta sin enviar' : 'Tienes ' + pend.length + ' preguntas sin enviar') + '</h2>' +
-        '<p>Pulsa el botón, elige WhatsApp y mándaselo a Lucía. Puedes enviar cada vez que escribas unas cuantas.</p>' +
-        '<button class="btn send" data-action="send"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Preparando fotos…' : '📤 Enviar a Lucía') + '</button></section>';
-    } else if (my.length && !isOrg()) {
-      send = '<p class="stat" style="margin-top:14px">✓ Lucía ya tiene todas tus preguntas. <button class="linkbtn" data-action="resend">Volver a enviarlas todas</button></p>';
+    if (ch.length) {
+      if (!S.pack) prepPack();
+      var nNew = 0, nEd = 0, nDel = 0;
+      ch.forEach(function (q) { if (q.del) nDel++; else if (inRepo(q.id)) nEd++; else nNew++; });
+      var bits = [];
+      if (nNew) bits.push(nNew + (nNew === 1 ? ' nueva' : ' nuevas'));
+      if (nEd) bits.push(nEd + (nEd === 1 ? ' editada' : ' editadas'));
+      if (nDel) bits.push(nDel + (nDel === 1 ? ' borrada' : ' borradas'));
+      sendCard = '<section class="card sendcard"><h2>Cambios sin enviar: ' + bits.join(', ') + '</h2>' +
+        '<p>' + (org ? 'Descarga el zip, descomprímelo en la carpeta del proyecto y haz Commit and Push.' :
+          'Pulsa el botón, elige WhatsApp y mándale el archivo a Lucía. Puedes enviar cada vez que escribas unas cuantas.') + '</p>' +
+        '<button class="btn send" data-action="send"' + (S.pack ? '' : ' disabled') + '>' +
+        (S.pack ? (org ? '📦 Descargar zip para GitHub' : '📤 Enviar a Lucía') : 'Preparando…') + '</button></section>';
+    }
+
+    var allCard = '';
+    if (org) {
+      var cats = catList().slice(0, 6), others = all().filter(function (q) { return !isMine(q) && (S.filt < 0 || norm(q.cat) === norm(cats[S.filt])); });
+      allCard = '<section class="card"><h2>Preguntas de las demás · ' + all().filter(function (q) { return !isMine(q); }).length + '</h2>' +
+        '<p class="lead">Como organizadora puedes editar o borrar cualquiera. Tus cambios también van en tu zip.</p>' +
+        loadNote() + (S.envNote ? '<p class="note err">' + esc(S.envNote) + '</p>' : '') +
+        '<div class="filt"><button class="ccat" data-action="filt" data-i="-1" aria-pressed="' + (S.filt < 0) + '" style="--k:var(--fg);--k-on:var(--bg)">Todas</button>' +
+        cats.map(function (c, i) { return '<button class="ccat k' + i + '" data-action="filt" data-i="' + i + '" aria-pressed="' + (S.filt === i) + '"><span class="dot"></span>' + esc(c) + '</button>'; }).join('') + '</div>' +
+        (others.length ? '<ul class="mylist">' + others.map(function (q) { return qItem(Object.assign({}, q, { statusHtml: status(q) + ' · ' }), editBtn(q) + delBtn(q)); }).join('') + '</ul>' : '<div class="empty">No hay preguntas aquí.</div>') +
+        '<div class="row" style="margin:16px 0 0"><button class="btn ghost" data-action="reload">Recargar preguntas publicadas</button>' +
+        (S.game ? '<button class="btn ghost" data-action="resetused">Olvidar las que ya han salido en la partida</button>' : '') + '</div></section>';
     }
 
     return '<div class="creator"><section class="card"><div class="hello"><h2>Hola, ' + esc(S.local.author) + '</h2>' +
       '<button class="btn ghost small" data-action="rename">No soy ' + esc(S.local.author) + '</button></div>' +
-      '<p class="lead" style="margin-top:8px">' + (isOrg() ? 'Crea preguntas o revisa las que te han mandado en tu zona de organizadora, más abajo.' :
-        'Crea preguntas sobre el grupo. Se guardan en este ' + (matchMedia('(pointer:coarse)').matches ? 'móvil' : 'navegador') + ' hasta que se las envíes a Lucía.') + '</p>' +
+      '<p class="lead" style="margin-top:8px">' + (org ? 'Crea preguntas o revisa las de todas más abajo.' :
+        'Crea preguntas sobre el grupo. Puedes editar o borrar las tuyas cuando quieras, también las que ya están publicadas.') + '</p>' +
       '<button class="btn big big-add" data-action="new">+ Nueva pregunta</button></section>' + sendCard +
-      '<section class="card"><h2>Tus preguntas · ' + my.length + '</h2>' + list +
-      send + '</section>' +
-      (isOrg() ? orgView() : '') + '</div>';
-  }
-
-  function orgView() {
-    var total = all(), recv = received();
-    var rows = '';
-    if (S.showAll) {
-      var cats = catList();
-      var filt = '<div class="filt"><button class="ccat" data-action="filt" data-i="-1" aria-pressed="' + (S.filt < 0) + '" style="--k:var(--fg);--k-on:var(--bg)">Todas</button>' +
-        cats.slice(0, 6).map(function (c, i) { return '<button class="ccat k' + i + '" data-action="filt" data-i="' + i + '" aria-pressed="' + (S.filt === i) + '"><span class="dot"></span>' + esc(c) + '</button>'; }).join('') + '</div>';
-      var shownQs = S.repo.filter(function (q) { return S.filt < 0 || norm(q.cat) === norm(cats[S.filt]); });
-      rows = filt + (shownQs.length ? '<ul class="mylist">' + shownQs.map(function (q) {
-        var del = !!S.local.deleted[q.id], cur = S.local.edits[q.id] || q;
-        return qItem(cur, del ? '<button class="btn ghost small" data-action="restore" data-id="' + esc(q.id) + '">Recuperar</button>'
-          : '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button><button class="btn ghost small" data-action="hide" data-id="' + esc(q.id) + '">Borrar</button>')
-          .replace('<li class="myq', '<li style="' + (del ? 'opacity:.5' : '') + '" class="myq');
-      }).join('') + '</ul>' : '<div class="empty">No hay preguntas publicadas aquí.</div>');
-    }
-    var nEdits = Object.keys(S.local.edits).length, nDel = Object.keys(S.local.deleted).length;
-    return '<section class="card"><details class="org"' + (S.orgOpen ? ' open' : '') + ' id="org"><summary>Zona de Lucía (organizadora)</summary><div class="inner">' +
-      loadNote() +
-      '<div><h3>1. Añadir las preguntas que te han enviado</h3>' +
-      '<p>Si te llega un <strong>mensaje</strong> de WhatsApp: mantén pulsado, Copiar, y pégalo aquí (puedes pegar varios seguidos).</p>' +
-      '<textarea class="paste" id="pastebox" placeholder="Pega aquí los mensajes…"></textarea>' +
-      '<button class="btn" data-action="pastego">Añadir preguntas del mensaje</button>' +
-      '<p style="margin-top:14px">Si te llega un <strong>archivo .zip</strong> (cuando llevan fotos): guárdalo y elígelo aquí.</p>' +
-      '<label class="btn ghost" for="imp">Elegir archivos…</label><input class="sr" type="file" id="imp" accept=".zip,application/zip" multiple>' +
-      (recv.length ? '<p style="margin:18px 0 8px"><strong>Recibidas y aún sin publicar · ' + recv.length + '</strong></p><ul class="mylist">' + recv.map(function (q) {
-        return qItem(q, '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button>' +
-          '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (S.local.edits[q.id] ? 'Deshacer cambios' : 'Borrar') + '</button>').replace('<div class="m">', '<div class="m">De ' + esc(q.author) + ' · ');
-      }).join('') + '</ul>' : '') + '</div>' +
-      '<div><h3>2. Revisar todas las preguntas</h3><p>' + total.length + ' en total: ' + S.repo.length + ' publicadas y ' + S.local.added.length + (S.local.added.length === 1 ? ' nueva' : ' nuevas') + ' en este dispositivo' +
-      (nEdits ? ', ' + nEdits + ' editadas' : '') + (nDel ? ', ' + nDel + ' borradas' : '') + '.</p>' +
-      '<button class="btn ghost" data-action="showall">' + (S.showAll ? 'Ocultar las publicadas' : 'Ver y editar las publicadas') + '</button>' + (rows ? '<div style="margin-top:12px">' + rows + '</div>' : '') + '</div>' +
-      '<div><h3>3. Publicarlas en GitHub</h3><p>Descarga el paquete, descomprímelo dentro de la carpeta del proyecto (sustituye <code>preguntas.xlsx</code> y junta la carpeta <code>imagenes</code>) y haz Commit and Push desde IntelliJ.</p>' +
-      '<button class="btn" data-action="export"' + (total.length ? '' : ' disabled') + '>Descargar todo para GitHub</button></div>' +
-      '<div><h3>4. Cuando ya esté subido</h3><p>Borra lo guardado en este dispositivo para empezar limpio. Hazlo solo después de publicar.</p>' +
-      '<div class="row" style="margin:0"><button class="btn ghost" data-action="reload">Recargar preguntas publicadas</button>' +
-      '<button class="btn ghost" data-action="wipe">' + (S.wipeConfirm ? '¿Seguro? No se puede deshacer' : 'Vaciar este dispositivo') + '</button>' +
-      (S.game ? '<button class="btn ghost" data-action="resetused">Olvidar las que ya han salido en la partida</button>' : '') + '</div></div>' +
-      '</div></details></section>';
+      '<section class="card"><h2>Tus preguntas · ' + my.length + '</h2>' + list + '</section>' + allCard + '</div>';
   }
 
   function render() {
@@ -964,11 +941,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     return { editing: q.id, cat: q.cat, hard: !!q.hard, q: q.q, mode: test ? 'test' : 'free', a: test ? '' : q.a,
       opts: test ? q.opts.slice() : ['', '', ''], right: right, people: q.people || '', img: q.img || '', img2: q.img2 || '', author: q.author };
   }
-  function findQ(id) {
-    var a = S.local.added.find(function (q) { return q.id === id; });
-    if (a) return a;
-    return S.local.edits[id] || S.repo.find(function (q) { return q.id === id; });
-  }
+  function findQ(id) { return all().find(function (q) { return q.id === id; }); }
   function saveForm() {
     var f = S.form;
     if (!f.cat) { S.formErr = 'Elige una categoría.'; return false; }
@@ -983,17 +956,16 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     } else if (!a) { S.formErr = 'Escribe la respuesta.'; return false; }
     var q = { id: f.editing || ('q-' + rid()), cat: f.cat, hard: f.hard, people: f.people, q: f.q.trim(), opts: opts, a: a,
       img: f.img, img2: f.img2, author: f.author || S.local.author };
-    var isRepo = S.repo.some(function (r) { return r.id === q.id; });
     var ai = S.local.added.findIndex(function (r) { return r.id === q.id; });
     if (ai > -1) S.local.added[ai] = q;
-    else if (isRepo) S.local.edits[q.id] = q;
+    else if (inRepo(q.id)) S.local.edits[q.id] = q;
     else S.local.added.push(q);
-    S.pack = null;
+    S.pack = null; S.packing = '';
     saveLocal(); refresh();
     return true;
   }
   function imgUsed(name) {
-    return all().concat(localAll()).some(function (q) { return q.img === name || q.img2 === name; }) ||
+    return all().concat(S.local.added).some(function (q) { return q.img === name || q.img2 === name; }) ||
       (S.form && (S.form.img === name || S.form.img2 === name));
   }
   function dropIfUnused(name) { if (name && IMG[name] && !imgUsed(name)) delImg(name); }
@@ -1073,14 +1045,24 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       }
       case 'rename': S.local.author = ''; saveLocal(); render(); break;
       case 'new': S.form = newForm(); S.formErr = ''; S.newPerson = ''; S.newCat = ''; render(); top(); break;
-      case 'edit': { var q = findQ(d.id); if (q) { S.form = newForm(q); S.formErr = ''; render(); top(); } break; }
+      case 'edit': { var q = findQ(d.id); if (q && canEdit(q)) { S.form = newForm(q); S.formErr = ''; render(); top(); } break; }
       case 'del': {
-        if (S.local.edits[d.id]) { var e = S.local.edits[d.id]; delete S.local.edits[d.id]; dropIfUnused(e.img); dropIfUnused(e.img2); toast('Cambios deshechos.'); }
-        else {
-          var i = S.local.added.findIndex(function (x) { return x.id === d.id; });
-          if (i > -1) { var rm = S.local.added.splice(i, 1)[0]; dropIfUnused(rm.img); dropIfUnused(rm.img2); toast('Pregunta borrada.'); }
+        var dq = findQ(d.id);
+        if (!dq || !canEdit(dq)) break;
+        if (S.delConfirm !== d.id) {
+          S.delConfirm = d.id; render();
+          setTimeout(function () { if (S.delConfirm === d.id) { S.delConfirm = ''; render(); } }, 4000);
+          break;
         }
-        S.pack = null; saveLocal(); refresh(); render(); break;
+        S.delConfirm = '';
+        var ai = S.local.added.findIndex(function (x) { return x.id === d.id; });
+        if (ai > -1) S.local.added.splice(ai, 1);
+        delete S.local.edits[d.id];
+        if (inRepo(d.id) || S.local.sent[d.id]) S.local.deleted[d.id] = clone(dq);
+        else delete S.local.sent[d.id];
+        dropIfUnused(dq.img); dropIfUnused(dq.img2);
+        S.pack = null; S.packing = '';
+        saveLocal(); refresh(); toast('Pregunta borrada.'); render(); break;
       }
       case 'f-cat': f.cat = d.v; render(); break;
       case 'f-addcat': {
@@ -1113,35 +1095,8 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       case 'f-cancel': { var fi = f; S.form = null; [fi.img, fi.img2].forEach(dropIfUnused); render(); top(); break; }
 
       case 'send': sendNow(); break;
-      case 'resend': S.local.sent = {}; S.pack = null; saveLocal(); render(); break;
-      case 'pastego': {
-        var ta = document.getElementById('pastebox'), txt = ta ? ta.value : '', m, got = [];
-        CODE_RE.lastIndex = 0;
-        while ((m = CODE_RE.exec(txt))) { try { got = got.concat(decodeQs(m[1])); } catch (er) {} }
-        S.orgOpen = true;
-        if (!got.length) { toast('No encuentro preguntas en ese texto. Copia el mensaje entero.'); break; }
-        var n = mergeQs(got); toast(n === 1 ? 'Añadida 1 pregunta.' : 'Añadidas ' + n + ' preguntas.'); render();
-        break;
-      }
-
-      case 'showall': S.showAll = !S.showAll; S.orgOpen = true; render(); break;
-      case 'filt': S.filt = +d.i; S.orgOpen = true; render(); break;
-      case 'hide': S.local.deleted[d.id] = 1; saveLocal(); refresh(); S.orgOpen = true; render(); break;
-      case 'restore': delete S.local.deleted[d.id]; saveLocal(); refresh(); S.orgOpen = true; render(); break;
-      case 'export': {
-        el.disabled = true; el.textContent = 'Preparando…';
-        buildZip(all(), 'trivial-para-github.zip').then(function (p) { download(p.blob, p.name); toast('Descargado: ' + p.count + ' preguntas' + (p.imgs ? ' y ' + p.imgs + (p.imgs === 1 ? ' foto nueva.' : ' fotos nuevas.') : '.')); S.orgOpen = true; render(); })
-          .catch(function () { toast('No se ha podido preparar el archivo.'); render(); });
-        break;
-      }
-      case 'reload': S.orgOpen = true; loadExcel(); break;
-      case 'wipe':
-        S.orgOpen = true;
-        if (!S.wipeConfirm) { S.wipeConfirm = true; render(); setTimeout(function () { S.wipeConfirm = false; if (S.view === 'make') render(); }, 4000); break; }
-        S.wipeConfirm = false;
-        Object.keys(IMG).forEach(delImg);
-        S.local = { author: S.local.author, added: [], edits: {}, deleted: {}, sent: {} }; S.pack = null;
-        saveLocal(); refresh(); toast('Dispositivo vaciado.'); render(); break;
+      case 'filt': S.filt = +d.i; render(); break;
+      case 'reload': loadExcel(); break;
       case 'resetused': if (g) { g.used = {}; saveGame(); toast('Todas las preguntas pueden volver a salir.'); } break;
     }
   }
@@ -1149,7 +1104,6 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     var b = e.target.closest('[data-action]');
     if (b && app.contains(b)) act(b.dataset.action, b);
   });
-  app.addEventListener('toggle', function (e) { if (e.target.id === 'org') S.orgOpen = e.target.open; }, true);
   app.addEventListener('input', function (e) {
     var el = e.target, f = S.form;
     if (el.dataset.team !== undefined) { S.teams[+el.dataset.team][el.dataset.f] = el.value; saveTeams(); return; }
@@ -1178,14 +1132,6 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       }).catch(function () { toast('No se ha podido usar esa foto. Prueba con otra (JPG o PNG).'); });
       return;
     }
-    if (el.id === 'imp') {
-      var files = Array.prototype.slice.call(el.files || []); if (!files.length) return;
-      S.orgOpen = true; toast('Leyendo archivos…');
-      files.reduce(function (p, file) { return p.then(function (n) { return importZip(file).then(function (k) { return n + k; }); }); }, Promise.resolve(0))
-        .then(function (n) { toast(n === 1 ? 'Añadida 1 pregunta.' : 'Añadidas ' + n + ' preguntas.'); render(); })
-        .catch(function (err) { toast(err && err.message ? err.message : 'No se ha podido leer ese archivo.'); render(); });
-      el.value = '';
-    }
   });
 
   /* Categorías creadas en el formulario antes de guardar ninguna pregunta */
@@ -1203,7 +1149,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   } catch (e) {}
   try {
     var lo = JSON.parse(lsGet(LKEY));
-    if (lo && typeof lo === 'object') S.local = { author: String(lo.author || ''), added: Array.isArray(lo.added) ? lo.added : [], edits: lo.edits || {}, deleted: lo.deleted || {}, sent: lo.sent || {} };
+    if (lo && typeof lo === 'object') S.local = { author: String(lo.author || ''), added: Array.isArray(lo.added) ? lo.added : [], edits: lo.edits || {}, deleted: lo.deleted || {}, sent: lo.sent || {}, sentAt: lo.sentAt || {} };
   } catch (e) {}
   try {
     var gg = JSON.parse(lsGet(GKEY));

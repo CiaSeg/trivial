@@ -5,29 +5,24 @@ Pantalla de preguntas para jugar con el **tablero físico** del Trivial. La fich
 Web publicada: **https://ciaseg.github.io/trivial/**
 Enlace directo al creador de preguntas (para mandar a las amigas): **https://ciaseg.github.io/trivial/?crear**
 
-## Cómo crean preguntas las amigas (sin saber nada de Excel)
+## Cómo crean preguntas las amigas
 
 1. Abren el enlace `?crear` en el móvil y ponen su nombre.
-2. Pulsan **+ Nueva pregunta**, rellenan el formulario y **Guardar**.
-3. Pulsan el botón verde **📤 Enviar a Lucía**, eligen WhatsApp y tu chat. Listo.
-   - Sin fotos: te llega un **mensaje de texto** normal.
-   - Con fotos: te llega un **archivo .zip**.
+2. **+ Nueva pregunta**, rellenan el formulario y **Guardar**.
+3. Pueden **Editar** o **Borrar** sus preguntas cuando quieran, también las que ya están publicadas.
+4. Pulsan **📤 Enviar a Lucía**, eligen WhatsApp y te llega un **.zip** con sus cambios (nuevas, editadas y borradas, con fotos).
 
-La web recuerda cuáles ya han enviado; si escriben más otro día, solo se envían las nuevas.
+## Cómo lo publica Lucía
 
-## Cómo las publica Lucía
+1. Guarda el `.zip` de WhatsApp en el ordenador.
+2. Clic derecho → **Extraer todo…** → en «Destino» pon la carpeta del proyecto (`...\Downloads\trivial\trivial`, **borrando el nombre del zip que Windows añade al final**). Se crean/llenan las carpetas `envios` e `imagenes`.
+3. En IntelliJ: **Git → Commit…**, marca lo nuevo de `envios/` e `imagenes/` y **Commit and Push**. En 1–2 minutos está en la web.
 
-En la web, pestaña **Crear preguntas → Zona de Lucía (organizadora)**:
+Cada envío es un archivo aparte dentro de `envios/` (con fecha y nombre), así que nunca se pisan entre amigas. La web los aplica en orden encima de `preguntas.xlsx`.
 
-(Solo aparece si pones «Lucía» como nombre.)
+Tú también puedes crear, editar o borrar **cualquier** pregunta desde la web (pon «Lucía» como nombre): tus cambios salen en un zip igual, con el botón **📦 Descargar zip para GitHub**.
 
-1. Para los **mensajes**: mantén pulsado el mensaje en WhatsApp → Copiar, pégalo en el cuadro y pulsa «Añadir preguntas del mensaje». Para los **.zip**: «Elegir archivos…». Aparecen en «Recibidas»; puedes editarlas o borrarlas.
-2. Si quieres, **Ver y editar las publicadas** para cambiar o quitar preguntas que ya estaban.
-3. **Descargar todo para GitHub** → descarga `trivial-para-github.zip`. Descomprímelo dentro de la carpeta del proyecto (la que tiene `index.html`), aceptando sustituir `preguntas.xlsx` y juntando la carpeta `imagenes`.
-4. En IntelliJ: **Git → Commit…**, marca los archivos nuevos (también los de `imagenes/`), escribe un mensaje y **Commit and Push**. En 1–2 minutos está publicado.
-5. Comprueba que se ve bien y pulsa **Vaciar este dispositivo** para empezar limpio.
-
-> Haz el trabajo de organizadora siempre desde la misma dirección (la web publicada). Lo que se guarda en el navegador de `ciaseg.github.io` no se ve si abres la página desde IntelliJ (`localhost`), y al revés.
+> La web lee la lista de envíos desde GitHub (`CiaSeg/trivial`, rama `master`). Si cambias el nombre del repo o de la rama, cambia `REPO` y `BRANCH` al principio del script de `index.html`.
 
 ## El Excel (`preguntas.xlsx`)
 
@@ -43,6 +38,8 @@ Sigue siendo la base de datos y se puede editar a mano si prefieres:
 | Respuesta | La correcta. Si coincide con una opción, se marca con ✓. |
 | Imagen pregunta / Imagen respuesta | Nombre del archivo dentro de la carpeta `imagenes/`. |
 | Autora / ID | Los rellena la web. Si añades filas a mano, déjalos vacíos. |
+
+Los Excel de `envios/` tienen además una columna **Acción** (`Nueva`, `Editar` o `Borrar`).
 
 ## Probar en local con IntelliJ
 
