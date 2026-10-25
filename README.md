@@ -8,16 +8,20 @@ Enlace directo al creador de preguntas (para mandar a las amigas): **https://cia
 ## Cómo crean preguntas las amigas (sin saber nada de Excel)
 
 1. Abren el enlace `?crear` en el móvil y ponen su nombre.
-2. Pulsan **+ Nueva pregunta** y rellenan el formulario: categoría, normal o difícil, la pregunta, la respuesta (libre o tipo test), fotos si quieren y a quién no le puede tocar.
-3. Cuando acaban, pulsan **Enviar mis preguntas a Lucía** → **Compartir** y te lo mandan por WhatsApp (es un archivo `.zip`).
+2. Pulsan **+ Nueva pregunta**, rellenan el formulario y **Guardar**.
+3. Pulsan el botón verde **📤 Enviar a Lucía**, eligen WhatsApp y tu chat. Listo.
+   - Sin fotos: te llega un **mensaje de texto** normal.
+   - Con fotos: te llega un **archivo .zip**.
 
-Sus preguntas se quedan guardadas en su móvil hasta que las envían; pueden volver otro día y seguir.
+La web recuerda cuáles ya han enviado; si escriben más otro día, solo se envían las nuevas.
 
 ## Cómo las publica Lucía
 
 En la web, pestaña **Crear preguntas → Zona de Lucía (organizadora)**:
 
-1. **Elegir archivos…** y selecciona los `.zip` que te han mandado. Aparecen en «Recibidas»; puedes editarlas o borrarlas.
+(Solo aparece si pones «Lucía» como nombre.)
+
+1. Para los **mensajes**: mantén pulsado el mensaje en WhatsApp → Copiar, pégalo en el cuadro y pulsa «Añadir preguntas del mensaje». Para los **.zip**: «Elegir archivos…». Aparecen en «Recibidas»; puedes editarlas o borrarlas.
 2. Si quieres, **Ver y editar las publicadas** para cambiar o quitar preguntas que ya estaban.
 3. **Descargar todo para GitHub** → descarga `trivial-para-github.zip`. Descomprímelo dentro de la carpeta del proyecto (la que tiene `index.html`), aceptando sustituir `preguntas.xlsx` y juntando la carpeta `imagenes`.
 4. En IntelliJ: **Git → Commit…**, marca los archivos nuevos (también los de `imagenes/`), escribe un mensaje y **Commit and Push**. En 1–2 minutos está publicado.

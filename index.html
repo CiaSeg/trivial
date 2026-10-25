@@ -265,6 +265,15 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
 .org p { margin: 0 0 10px; color: var(--muted); }
 .filt { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .filt .ccat { padding: 6px 12px; font-size: .88rem; }
+.sendcard { display: grid; gap: 12px; background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border-color: var(--ok); }
+.sendcard::before { display: none; }
+.sendcard h2 { margin: 0; }
+.sendcard p { margin: 0; color: var(--muted); }
+.btn.send { background: #1fa855; color: #fff; font-size: 1.25rem; padding: 18px 24px; border-radius: 16px; width: 100%; box-shadow: 0 6px 0 #127a3b; }
+.btn.send:active { transform: translateY(4px); box-shadow: 0 2px 0 #127a3b; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .9rem; justify-self: start; }
+.tag-ok { color: var(--ok); font-weight: 700; }
+.paste { width: 100%; min-height: 90px; background: var(--bg); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; color: var(--fg); resize: vertical; margin-bottom: 8px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--btn); color: var(--btn-fg); padding: 12px 18px; border-radius: 12px; font-weight: 700; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }
 @media (max-width: 560px) { .myq { flex-wrap: wrap; } .myq .acts { width: 100%; } }
 </style>
@@ -364,7 +373,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     view: 'play', repo: [], source: '', loading: true, error: '',
     teams: [{ name: 'Equipo 1', members: '' }, { name: 'Equipo 2', members: '' }],
     game: null, confirm: false, msg: '',
-    local: { author: '', added: [], edits: {}, deleted: {} },
+    local: { author: '', added: [], edits: {}, deleted: {}, sent: {} },
     form: null, formErr: '', newPerson: '', newCat: '', pack: null, showAll: false, filt: -1, toast: ''
   };
   var confirmTimer = null, toastTimer = null;
@@ -510,6 +519,19 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   function canShare(blob, name) {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: 'application/zip' })] })); } catch (e) { return false; }
   }
+  function mergeQs(qs) {
+    var repoIds = {};
+    S.repo.forEach(function (q) { repoIds[q.id] = 1; });
+    qs.forEach(function (q) {
+      if (repoIds[q.id]) { S.local.edits[q.id] = q; delete S.local.deleted[q.id]; }
+      else {
+        var i = S.local.added.findIndex(function (a) { return a.id === q.id; });
+        if (i > -1) S.local.added[i] = q; else S.local.added.push(q);
+      }
+    });
+    saveLocal(); refresh();
+    return qs.length;
+  }
   function importZip(file) {
     return JSZip.loadAsync(file).then(function (zip) {
       var x = zip.file(/(^|\/)preguntas[^\/]*\.xlsx$/i)[0] || zip.file(/\.xlsx$/i)[0];
@@ -522,21 +544,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
           var f = zip.file(IMGDIR + n) || zip.file(new RegExp('(^|/)' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'))[0];
           return f ? f.async('blob').then(function (b) { return putImg(n, new Blob([b], { type: 'image/jpeg' })); }) : null;
         });
-        return Promise.all(jobs).then(function () {
-          var repoIds = {};
-          S.repo.forEach(function (q) { repoIds[q.id] = 1; });
-          var n = 0;
-          qs.forEach(function (q) {
-            if (repoIds[q.id]) { S.local.edits[q.id] = q; delete S.local.deleted[q.id]; }
-            else {
-              var i = S.local.added.findIndex(function (a) { return a.id === q.id; });
-              if (i > -1) S.local.added[i] = q; else S.local.added.push(q);
-            }
-            n++;
-          });
-          saveLocal(); refresh();
-          return n;
-        });
+        return Promise.all(jobs).then(function () { return mergeQs(qs); });
       });
     });
   }
@@ -749,6 +757,70 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   function mine() { return localAll().filter(isMine); }
   function received() { return localAll().filter(function (q) { return !isMine(q); }); }
   function isOrg() { return norm(S.local.author) === 'lucia'; }
+  function sig(q) { return JSON.stringify([q.cat, q.hard, q.people, q.q, q.opts, q.a, q.img, q.img2]); }
+  function isSent(q) { return S.local.sent[q.id] === sig(q); }
+  function pending() { return mine().filter(function (q) { return !isSent(q); }); }
+
+  /* ---------- Enviar a Lucía ---------- */
+  var CODE_RE = /TRIVIAL#([A-Za-z0-9+\/=]+)#/g;
+  function encodeQs(qs) {
+    var json = JSON.stringify(qs.map(function (q) { return { id: q.id, c: q.cat, h: q.hard ? 1 : 0, p: q.people || '', q: q.q, o: q.opts || [], a: q.a || '', u: q.author || '' }; }));
+    return btoa(unescape(encodeURIComponent(json)));
+  }
+  function decodeQs(b64) {
+    var arr = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    return arr.map(function (x) {
+      return { id: String(x.id || ('q-' + rid())), cat: String(x.c || '').slice(0, 40), hard: !!x.h, people: String(x.p || ''), q: String(x.q || ''),
+        opts: Array.isArray(x.o) ? x.o.map(String) : [], a: String(x.a || ''), img: '', img2: '', author: String(x.u || '') };
+    }).filter(function (q) { return q.cat && q.q; });
+  }
+  function shareText(qs, withCode) {
+    var t = '🎄 ' + (qs.length === 1 ? 'Mi pregunta' : 'Mis ' + qs.length + ' preguntas') + ' para el Trivial del Lore (' + S.local.author + '):\n\n' +
+      qs.map(function (q, i) { return (i + 1) + '. ' + q.q + ' (' + q.cat + (q.hard ? ', difícil' : '') + ')'; }).join('\n');
+    if (withCode) t += '\n\n👇 Lucía: copia todo este mensaje y pégalo en la web\nTRIVIAL#' + encodeQs(qs) + '#';
+    return t;
+  }
+  function prepPack() {
+    var p = pending().filter(function (q) { return q.img || q.img2; });
+    if (!p.length) { S.pack = null; return; }
+    var key = p.map(sig).join('|');
+    if ((S.pack && S.pack.key === key) || S.packing === key) return;
+    S.packing = key;
+    var safe = norm(S.local.author).replace(/[^a-z0-9]+/g, '-') || 'amiga';
+    buildZip(pending(), 'preguntas-' + safe + '.zip').then(function (pk) {
+      if (S.packing !== key) return;
+      pk.key = key; S.pack = pk; S.packing = '';
+      if (S.view === 'make' && !S.form) render();
+    }).catch(function () { S.packing = ''; });
+  }
+  function markSent(qs) { qs.forEach(function (q) { S.local.sent[q.id] = sig(q); }); saveLocal(); render(); }
+  function sendNow() {
+    var qs = pending();
+    if (!qs.length) return;
+    var photos = qs.some(function (q) { return q.img || q.img2; });
+    if (!photos) {
+      var text = shareText(qs, true);
+      if (navigator.share) {
+        navigator.share({ text: text }).then(function () { markSent(qs); toast('¡Enviado! Gracias 💛'); })
+          .catch(function (e) { if (e && e.name === 'AbortError') return; window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank'); markSent(qs); });
+      } else {
+        window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+        markSent(qs);
+      }
+      return;
+    }
+    var pk = S.pack;
+    if (!pk) { toast('Preparando las fotos… pulsa otra vez en un momento.'); prepPack(); return; }
+    var file = new File([pk.blob], pk.name, { type: 'application/zip' });
+    if (canShare(pk.blob, pk.name)) {
+      navigator.share({ files: [file], title: 'Preguntas del Trivial', text: shareText(qs, false) })
+        .then(function () { markSent(qs); toast('¡Enviado! Gracias 💛'); })
+        .catch(function (e) { if (e && e.name === 'AbortError') return; download(pk.blob, pk.name); markSent(qs); toast('Descargado. Mándale el archivo a Lucía por WhatsApp.'); });
+    } else {
+      download(pk.blob, pk.name); markSent(qs);
+      toast('Descargado. Mándale el archivo a Lucía por WhatsApp.');
+    }
+  }
   function qMeta(q) {
     var bits = [q.cat, q.hard ? 'Difícil' : 'Normal'];
     if (q.opts && q.opts.length) bits.push('Tipo test');
@@ -811,30 +883,31 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     var list = my.length ? '<ul class="mylist">' + my.map(function (q) {
       var isEdit = !!S.local.edits[q.id];
       return qItem(q, '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button>' +
-        '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (isEdit ? 'Deshacer cambios' : 'Borrar') + '</button>');
+        '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (isEdit ? 'Deshacer cambios' : 'Borrar') + '</button>')
+        .replace('<div class="m">', '<div class="m">' + (isOrg() ? '' : (isSent(q) ? '<span class="tag-ok">✓ Enviada</span> · ' : '<strong>Sin enviar</strong> · ')));
     }).join('') + '</ul>' : '<div class="empty">Aún no has creado ninguna pregunta.</div>';
 
-    var send = '';
-    if (my.length && isOrg()) send = '<p class="stat">Tus preguntas ya cuentan para jugar en este dispositivo. Para publicarlas, usa el paso 3 de tu zona de organizadora.</p>';
-    else if (my.length) {
-      if (S.pack) {
-        var sh = canShare(S.pack.blob, S.pack.name);
-        send = '<div class="sendbox"><p class="lead" style="margin:0">Listo: ' + S.pack.count + (S.pack.count === 1 ? ' pregunta' : ' preguntas') + (S.pack.imgs ? ' y ' + S.pack.imgs + (S.pack.imgs === 1 ? ' foto' : ' fotos') : '') + ' en un archivo. Mándaselo a Lucía por WhatsApp o como prefieras.</p>' +
-          '<div class="row" style="margin:0">' + (sh ? '<button class="btn big" data-action="share">Compartir (WhatsApp…)</button>' : '') +
-          '<button class="btn ' + (sh ? 'ghost ' : '') + 'big" data-action="dl">Descargar archivo</button></div></div>';
-      } else {
-        send = '<button class="btn big" data-action="pack">Enviar mis preguntas a Lucía</button>';
-      }
+    var send = '', pend = isOrg() ? [] : pending();
+    if (my.length && isOrg()) send = '<p class="stat" style="margin-top:14px">Tus preguntas ya cuentan para jugar en este dispositivo. Para publicarlas, usa el paso 3 de tu zona de organizadora.</p>';
+    var sendCard = '';
+    if (pend.length) {
+      var photos = pend.some(function (q) { return q.img || q.img2; }), busy = photos && !S.pack;
+      if (busy) prepPack();
+      sendCard = '<section class="card sendcard"><h2>' + (pend.length === 1 ? 'Tienes 1 pregunta sin enviar' : 'Tienes ' + pend.length + ' preguntas sin enviar') + '</h2>' +
+        '<p>Pulsa el botón, elige WhatsApp y mándaselo a Lucía. Puedes enviar cada vez que escribas unas cuantas.</p>' +
+        '<button class="btn send" data-action="send"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Preparando fotos…' : '📤 Enviar a Lucía') + '</button></section>';
+    } else if (my.length && !isOrg()) {
+      send = '<p class="stat" style="margin-top:14px">✓ Lucía ya tiene todas tus preguntas. <button class="linkbtn" data-action="resend">Volver a enviarlas todas</button></p>';
     }
 
     return '<div class="creator"><section class="card"><div class="hello"><h2>Hola, ' + esc(S.local.author) + '</h2>' +
       '<button class="btn ghost small" data-action="rename">No soy ' + esc(S.local.author) + '</button></div>' +
       '<p class="lead" style="margin-top:8px">' + (isOrg() ? 'Crea preguntas o revisa las que te han mandado en tu zona de organizadora, más abajo.' :
         'Crea preguntas sobre el grupo. Se guardan en este ' + (matchMedia('(pointer:coarse)').matches ? 'móvil' : 'navegador') + ' hasta que se las envíes a Lucía.') + '</p>' +
-      '<button class="btn big big-add" data-action="new">+ Nueva pregunta</button></section>' +
+      '<button class="btn big big-add" data-action="new">+ Nueva pregunta</button></section>' + sendCard +
       '<section class="card"><h2>Tus preguntas · ' + my.length + '</h2>' + list +
-      (send ? '<div style="margin-top:18px">' + send + '</div>' : '') + '</section>' +
-      orgView() + '</div>';
+      send + '</section>' +
+      (isOrg() ? orgView() : '') + '</div>';
   }
 
   function orgView() {
@@ -855,9 +928,13 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     var nEdits = Object.keys(S.local.edits).length, nDel = Object.keys(S.local.deleted).length;
     return '<section class="card"><details class="org"' + (S.orgOpen ? ' open' : '') + ' id="org"><summary>Zona de Lucía (organizadora)</summary><div class="inner">' +
       loadNote() +
-      '<div><h3>1. Añadir las preguntas que te han enviado</h3><p>Elige uno o varios archivos .zip que te hayan mandado tus amigas.</p>' +
+      '<div><h3>1. Añadir las preguntas que te han enviado</h3>' +
+      '<p>Si te llega un <strong>mensaje</strong> de WhatsApp: mantén pulsado, Copiar, y pégalo aquí (puedes pegar varios seguidos).</p>' +
+      '<textarea class="paste" id="pastebox" placeholder="Pega aquí los mensajes…"></textarea>' +
+      '<button class="btn" data-action="pastego">Añadir preguntas del mensaje</button>' +
+      '<p style="margin-top:14px">Si te llega un <strong>archivo .zip</strong> (cuando llevan fotos): guárdalo y elígelo aquí.</p>' +
       '<label class="btn ghost" for="imp">Elegir archivos…</label><input class="sr" type="file" id="imp" accept=".zip,application/zip" multiple>' +
-      (recv.length ? '<p style="margin:14px 0 8px"><strong>Recibidas y aún sin publicar · ' + recv.length + '</strong></p><ul class="mylist">' + recv.map(function (q) {
+      (recv.length ? '<p style="margin:18px 0 8px"><strong>Recibidas y aún sin publicar · ' + recv.length + '</strong></p><ul class="mylist">' + recv.map(function (q) {
         return qItem(q, '<button class="btn ghost small" data-action="edit" data-id="' + esc(q.id) + '">Editar</button>' +
           '<button class="btn ghost small" data-action="del" data-id="' + esc(q.id) + '">' + (S.local.edits[q.id] ? 'Deshacer cambios' : 'Borrar') + '</button>').replace('<div class="m">', '<div class="m">De ' + esc(q.author) + ' · ');
       }).join('') + '</ul>' : '') + '</div>' +
@@ -1032,23 +1109,20 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
         S.newPerson = ''; render(); break;
       }
       case 'f-rmimg': { var old = f[d.f]; f[d.f] = ''; dropIfUnused(old); render(); break; }
-      case 'f-save': if (saveForm()) { S.form = null; S.formErr = ''; toast('Pregunta guardada.'); } render(); top(); break;
+      case 'f-save': if (saveForm()) { S.form = null; S.formErr = ''; toast(isOrg() ? 'Pregunta guardada.' : 'Guardada. Cuando quieras, pulsa «Enviar a Lucía».'); } render(); top(); break;
       case 'f-cancel': { var fi = f; S.form = null; [fi.img, fi.img2].forEach(dropIfUnused); render(); top(); break; }
 
-      case 'pack': {
-        el.disabled = true; el.textContent = 'Preparando…';
-        var safe = norm(S.local.author).replace(/[^a-z0-9]+/g, '-') || 'amiga';
-        buildZip(mine(), 'preguntas-' + safe + '.zip').then(function (p) { S.pack = p; render(); })
-          .catch(function () { toast('No se ha podido preparar el archivo.'); render(); });
+      case 'send': sendNow(); break;
+      case 'resend': S.local.sent = {}; S.pack = null; saveLocal(); render(); break;
+      case 'pastego': {
+        var ta = document.getElementById('pastebox'), txt = ta ? ta.value : '', m, got = [];
+        CODE_RE.lastIndex = 0;
+        while ((m = CODE_RE.exec(txt))) { try { got = got.concat(decodeQs(m[1])); } catch (er) {} }
+        S.orgOpen = true;
+        if (!got.length) { toast('No encuentro preguntas en ese texto. Copia el mensaje entero.'); break; }
+        var n = mergeQs(got); toast(n === 1 ? 'Añadida 1 pregunta.' : 'Añadidas ' + n + ' preguntas.'); render();
         break;
       }
-      case 'share': {
-        var file = new File([S.pack.blob], S.pack.name, { type: 'application/zip' });
-        navigator.share({ files: [file], title: 'Preguntas del Trivial', text: 'Mis preguntas para el Trivial del Lore' })
-          .then(function () { toast('¡Enviado!'); }).catch(function (e) { if (!e || e.name !== 'AbortError') download(S.pack.blob, S.pack.name); });
-        break;
-      }
-      case 'dl': download(S.pack.blob, S.pack.name); toast('Archivo descargado. Ahora mándaselo a Lucía.'); break;
 
       case 'showall': S.showAll = !S.showAll; S.orgOpen = true; render(); break;
       case 'filt': S.filt = +d.i; S.orgOpen = true; render(); break;
@@ -1066,7 +1140,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
         if (!S.wipeConfirm) { S.wipeConfirm = true; render(); setTimeout(function () { S.wipeConfirm = false; if (S.view === 'make') render(); }, 4000); break; }
         S.wipeConfirm = false;
         Object.keys(IMG).forEach(delImg);
-        S.local = { author: S.local.author, added: [], edits: {}, deleted: {} }; S.pack = null;
+        S.local = { author: S.local.author, added: [], edits: {}, deleted: {}, sent: {} }; S.pack = null;
         saveLocal(); refresh(); toast('Dispositivo vaciado.'); render(); break;
       case 'resetused': if (g) { g.used = {}; saveGame(); toast('Todas las preguntas pueden volver a salir.'); } break;
     }
@@ -1129,7 +1203,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   } catch (e) {}
   try {
     var lo = JSON.parse(lsGet(LKEY));
-    if (lo && typeof lo === 'object') S.local = { author: String(lo.author || ''), added: Array.isArray(lo.added) ? lo.added : [], edits: lo.edits || {}, deleted: lo.deleted || {} };
+    if (lo && typeof lo === 'object') S.local = { author: String(lo.author || ''), added: Array.isArray(lo.added) ? lo.added : [], edits: lo.edits || {}, deleted: lo.deleted || {}, sent: lo.sent || {} };
   } catch (e) {}
   try {
     var gg = JSON.parse(lsGet(GKEY));
