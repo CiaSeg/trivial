@@ -8,7 +8,7 @@ Enlace directo al creador de preguntas (para mandar a las amigas): **https://cia
 ## Cómo crean preguntas las amigas
 
 1. Abren el enlace `?crear` en el móvil y ponen su nombre.
-2. **+ Nueva pregunta**, rellenan el formulario y **Guardar**.
+2. **+ Nueva pregunta**, rellenan el formulario y **Guardar**. En el paso 1 pueden elegir una categoría de color o una casilla especial: **⚔️ Duelo** o **🎯 Reto para todos**.
 3. Pueden **Editar** o **Borrar** sus preguntas cuando quieran, también las que ya están publicadas.
 4. Pulsan **📤 Enviar a Lucía**, eligen WhatsApp y te llega un **.zip** con sus cambios (nuevas, editadas y borradas, con fotos).
 
@@ -30,7 +30,7 @@ Sigue siendo la base de datos y se puede editar a mano si prefieres:
 
 | Columna | Qué poner |
 |---|---|
-| Categoría | Las 6 primeras que aparezcan toman los colores azul, rosa, verde, naranja, amarillo y rojo. |
+| Categoría | Las 6 primeras que aparezcan toman los colores azul, rosa, verde, naranja, amarillo y rojo. Escribe **`Duelo`** o **`Reto`** para las casillas especiales. |
 | Dificultad | `Normal` o `Difícil`. Las difíciles salen en las casillas de quesito y en la pregunta final. |
 | Persona (no le puede tocar) | Si esa persona está en el equipo que juega, no le sale. Varias, separadas por comas. |
 | Pregunta | El texto. |
@@ -51,6 +51,8 @@ Abre `index.html` y pulsa el icono de navegador que sale arriba a la derecha del
 2. Tira el dado en el tablero físico y mueve la ficha.
 3. Toca la categoría del color donde has caído. Si es casilla de quesito, marca antes «Es casilla de quesito».
 4. «Ver respuesta» → «Acierto» (tira otra vez y, si era casilla de quesito, se lo lleva) o «Fallo» (pasa el turno).
-5. Con todos los quesitos, el equipo elige categoría y se juega la pregunta final (difícil).
+5. **⚔️ Duelo**: el equipo elige a qué equipo retar y qué quesito robarle (uno que el rival tenga y ellos no). Sale una pregunta de duelo, contestan los dos y se pulsa quién gana. Si gana el retador, se lleva el quesito. «Empate» saca otra pregunta. Después pasa el turno.
+6. **🎯 Reto para todos**: sale un reto en el que juegan todos los equipos. Se pulsa quién gana, y ese equipo elige el quesito que quiere. Después pasa el turno.
+7. Con todos los quesitos, el equipo elige categoría y se juega la pregunta final (difícil).
 
 > Si el repo es público, cualquiera con el enlace puede ver las respuestas. Que no curioseen antes de la cena 😉

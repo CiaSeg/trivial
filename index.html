@@ -274,6 +274,24 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .9rem; justify-self: start; }
 .tag-ok { color: var(--ok); font-weight: 700; }
 .paste { width: 100%; min-height: 90px; background: var(--bg); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; color: var(--fg); resize: vertical; margin-bottom: 8px; }
+.kx { --k: #3b2f6b; --k-on: #ffffff; }
+.kd { --k: #8a1538; --k-on: #ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kx { --k: #b9a8ff; --k-on: #13101f; } :root:not([data-theme="light"]) .kd { --k: #ff7a9c; --k-on: #2a0a14; } }
+.specials { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; width: 100%; margin-top: 16px; }
+.pick .emo { width: 58px; height: 58px; flex: none; display: grid; place-items: center; font-size: 2.1rem; border-radius: 50%; background: color-mix(in srgb, var(--k-on) 18%, transparent); }
+.versus { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; width: 100%; margin-top: 16px; }
+.vteam { display: flex; align-items: center; gap: 12px; border: 2px solid var(--line); background: var(--surface); border-radius: 16px; padding: 10px 16px 10px 10px; cursor: pointer; font-weight: 700; font-size: 1.05rem; box-shadow: 0 4px 0 var(--line); min-width: 0; }
+.vteam:hover:not(:disabled) { border-color: var(--fg); }
+.vteam:disabled { opacity: .45; cursor: default; }
+.vteam .token { width: 58px; height: 58px; }
+.wpick { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+.wbtn { display: inline-flex; align-items: center; gap: 10px; border: 0; border-radius: 14px; padding: 12px 18px; background: var(--k); color: var(--k-on); font-weight: 800; font-size: 1.05rem; cursor: pointer; box-shadow: 0 5px 0 color-mix(in srgb, var(--k) 60%, #000); font-family: var(--f-display); }
+.wbtn:active { transform: translateY(4px); box-shadow: 0 1px 0 color-mix(in srgb, var(--k) 60%, #000); }
+.wbtn .pk-ico { width: 34px; height: 34px; }
+.winners { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 22px; }
+.winners .btn { width: 100%; }
+.spchip { display: inline-flex; align-items: center; gap: 8px; border: 2px dashed var(--k); background: transparent; border-radius: 999px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 1rem; }
+.spchip[aria-pressed="true"] { background: var(--k); color: var(--k-on); border-style: solid; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--btn); color: var(--btn-fg); padding: 12px 18px; border-radius: 12px; font-weight: 700; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }
 @media (max-width: 560px) { .myq { flex-wrap: wrap; } .myq .acts { width: 100%; } }
 </style>
@@ -407,9 +425,12 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     });
     return out;
   }
+  /* Duelos y retos van en la columna Categoría como «Duelo» y «Reto»; no son colores del tablero */
+  function special(c) { c = norm(c); return /^(⚔️ ?)?duelo/.test(c) ? 'duelo' : (/^(🎯 ?)?reto/.test(c) ? 'reto' : ''); }
+  var SPNAME = { duelo: 'Duelo', reto: 'Reto' };
   function catList() {
     var cats = [];
-    all().forEach(function (q) { if (q.cat && !cats.some(function (c) { return norm(c) === norm(q.cat); })) cats.push(q.cat); });
+    all().forEach(function (q) { if (q.cat && !special(q.cat) && !cats.some(function (c) { return norm(c) === norm(q.cat); })) cats.push(q.cat); });
     return cats;
   }
   function playQs() {
@@ -419,10 +440,18 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       return ci < 0 ? null : { id: q.id, cat: ci, hard: !!q.hard, people: people(q.people), q: q.q, opts: q.opts || [], a: q.a || '', img: q.img || '', img2: q.img2 || '' };
     }).filter(Boolean);
   }
-  var CATS = [], QS = [];
-  function refresh() { CATS = catList().slice(0, 6); QS = playQs(); }
+  var CATS = [], QS = [], SPQ = { duelo: [], reto: [] };
+  function refresh() {
+    CATS = catList().slice(0, 6); QS = playQs();
+    SPQ = { duelo: [], reto: [] };
+    all().forEach(function (q) {
+      var k = special(q.cat);
+      if (k) SPQ[k].push({ id: q.id, kind: k, cat: -1, hard: false, people: people(q.people), q: q.q, opts: q.opts || [], a: q.a || '', img: q.img || '', img2: q.img2 || '' });
+    });
+  }
   function catName(i) { return CATS[i] || ('Categoría ' + (i + 1)); }
   function ncat() { return CATS.length; }
+  function kcls(name) { var k = special(name); return k === 'duelo' ? 'kd' : k === 'reto' ? 'kx' : 'k' + catIdx(name); }
   function catIdx(name) { var i = CATS.findIndex(function (c) { return norm(c) === norm(name); }); return i < 0 ? 0 : i; }
 
   /* ---------- Excel: leer y escribir ---------- */
@@ -628,6 +657,27 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     g.used[q.id] = 1;
     return { q: clone(q), note: note };
   }
+  function drawSpecial(kind, teams, avoid) {
+    var g = S.game, note = '';
+    var p = SPQ[kind].filter(function (q) { return teams.every(function (t) { return allowed(q, t); }); });
+    if (!p.length) return { error: kind === 'duelo' ? 'No hay preguntas de duelo que puedan jugar estos equipos. Añádelas en «Crear preguntas» (categoría ⚔️ Duelo).' : 'No hay retos para todos. Añádelos en «Crear preguntas» (categoría 🎯 Reto para todos).' };
+    var fresh = p.filter(function (q) { return !g.used[q.id] && q.id !== avoid; });
+    if (!fresh.length) {
+      p.forEach(function (q) { delete g.used[q.id]; });
+      fresh = p.filter(function (q) { return q.id !== avoid; });
+      if (!fresh.length) fresh = p;
+      note = 'Ya habían salido todos: vuelven a empezar.';
+    }
+    var q = fresh[Math.floor(Math.random() * fresh.length)];
+    g.used[q.id] = 1;
+    return { q: clone(q), note: note };
+  }
+  function stealable(att, def) { var out = []; for (var i = 0; i < ncat(); i++) if (def.won[i] && !att.won[i]) out.push(i); return out; }
+  function missing(t) { var out = []; for (var i = 0; i < ncat(); i++) if (!t.won[i]) out.push(i); return out; }
+  function nextTurn() { var g = S.game; g.turn = (g.turn + 1) % g.teams.length; g.phase = 'ready'; g.cur = null; g.cat = null; g.duel = null; g.retoWin = null; }
+  function wedgeBtn(i, action, extra) {
+    return '<button class="wbtn k' + i + '" data-action="' + action + '" data-i="' + i + '"' + (extra || '') + '>' + pie(i).replace('pk-ico', 'pk-ico') + esc(catName(i)) + '</button>';
+  }
   function countLeft(ci, team, hard) {
     var p = pool(ci, hard, team);
     return { all: p.length, left: p.filter(function (q) { return !S.game.used[q.id]; }).length };
@@ -679,6 +729,8 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       '<li>Jugad en el tablero físico. Cuando la ficha de un equipo caiga en una casilla, tocad aquí la categoría de ese color.</li>' +
       '<li>Si es una casilla de quesito, marcad esa opción antes de elegir la categoría: saldrá una pregunta difícil.</li>' +
       '<li>Si aciertan, tiran otra vez, y en casilla de quesito se lo llevan. Si fallan, pasa el turno.</li>' +
+      '<li>⚔️ Duelo: el equipo elige a quién retar y qué quesito robarle. Contestan los dos; si gana el retador, se lo lleva.</li>' +
+      '<li>🎯 Reto para todos: juegan todos los equipos y quien gane elige el quesito que quiere.</li>' +
       '<li>Con todos los quesitos, el equipo elige categoría y se juega la pregunta final, que también es difícil.</li>' +
       '</ol></details></div>' + art + '</section>';
   }
@@ -715,11 +767,62 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
           return '<button class="pick k' + i + '" data-action="pick" data-i="' + i + '">' + pie(i) +
             '<span class="pk-txt"><span class="pk-name">' + esc(c) + '</span><span class="pk-sub">' + esc(sub) + '</span></span></button>';
         }).join('') + '</div>' +
-        (fin ? '' : '<label class="wedgechk" for="wedgesq"><input type="checkbox" id="wedgesq"' + (g.wedgeNext ? ' checked' : '') + '>Es casilla de quesito <small>· pregunta difícil</small></label>') +
+        (fin ? '' : '<label class="wedgechk" for="wedgesq"><input type="checkbox" id="wedgesq"' + (g.wedgeNext ? ' checked' : '') + '>Es casilla de quesito <small>· pregunta difícil</small></label>' +
+          '<p class="eyebrow" style="margin-top:26px">¿Casilla especial?</p><div class="specials">' +
+          '<button class="pick kd" data-action="duel"><span class="emo">⚔️</span><span class="pk-txt"><span class="pk-name">Duelo</span><span class="pk-sub">Reta a otro equipo y róbale un quesito · ' + SPQ.duelo.length + ' preguntas</span></span></button>' +
+          '<button class="pick kx" data-action="reto"><span class="emo">🎯</span><span class="pk-txt"><span class="pk-name">Reto para todos</span><span class="pk-sub">Juegan todos; quien gane elige quesito · ' + SPQ.reto.length + ' retos</span></span></button></div>') +
         '<p class="eyebrow" style="margin-top:26px">¿Cambia el turno? Elige equipo</p>' +
         '<div class="turns">' + g.teams.map(function (t, i) {
           return '<button class="turnbtn" data-action="setturn" data-t="' + i + '" aria-pressed="' + (i === g.turn) + '"><span class="pn">' + (i + 1) + '</span>' + esc(t.name) + '</button>';
         }).join('') + '</div></div>';
+    } else if (g.phase === 'duel-pick') {
+      var d0 = g.duel || {};
+      if (d0.rival == null) {
+        stage += '<div class="centered"><p class="turnline">⚔️ Duelo<strong>' + esc(team.name) + ' reta a…</strong></p>' +
+          '<p class="turnhint">Elegid el equipo al que queréis robar un quesito.</p><div class="versus">' +
+          g.teams.map(function (t, i) {
+            if (i === g.turn) return '';
+            var can = stealable(team, t).length;
+            return '<button class="vteam" data-action="duelrival" data-t="' + i + '"' + (can ? '' : ' disabled title="No tiene quesitos que os falten"') + '>' + token(t.won, null, t.name) +
+              '<span>' + esc(t.name) + '<br><small class="tcount">' + (can ? can + (can === 1 ? ' quesito para robar' : ' quesitos para robar') : 'Nada que robar') + '</small></span></button>';
+          }).join('') + '</div><div class="actions"><button class="btn ghost" data-action="specback">Cancelar</button></div></div>';
+      } else {
+        var rv = g.teams[d0.rival];
+        stage += '<div class="centered"><p class="turnline">⚔️ Duelo contra ' + esc(rv.name) + '<strong>¿Qué quesito queréis robar?</strong></p><div class="wpick">' +
+          stealable(team, rv).map(function (i) { return wedgeBtn(i, 'duelwedge'); }).join('') + '</div>' +
+          '<div class="actions"><button class="btn ghost" data-action="duelrival" data-t="">Elegir otro equipo</button></div></div>';
+      }
+    } else if (g.phase === 'reto-pick') {
+      var wt = g.teams[g.retoWin], miss = missing(wt);
+      stage += confetti() + '<div class="centered win"><p class="turnline">🎯 ¡Gana el reto!<strong>' + esc(wt.name) + '</strong></p>' +
+        (miss.length ? '<p class="turnhint">Elegid el quesito que queréis.</p><div class="wpick">' + miss.map(function (i) { return wedgeBtn(i, 'retowedge'); }).join('') + '</div>'
+          : '<p class="turnhint">Ya tenéis todos los quesitos. ¡A por la final!</p><div class="actions"><button class="btn big" data-action="retowedge" data-i="-1">Seguir</button></div>') + '</div>';
+    } else if (g.phase === 'sp-q' || g.phase === 'sp-a') {
+      var sq = g.cur, sshown = g.phase === 'sp-a', isDuel = sq.kind === 'duelo', dd = g.duel || {};
+      var sright = function (o) { return sq.a && norm(o) === norm(sq.a); };
+      stage += '<article class="qcard ' + (isDuel ? 'kd' : 'kx') + '"><div class="qhead"><span class="cname">' + (isDuel ? '⚔️ Duelo' : '🎯 Reto para todos') + '</span>' +
+        (isDuel ? '<span class="badge solid">' + esc(team.name) + ' contra ' + esc(g.teams[dd.rival].name) + '</span><span class="badge">Se juegan: ' + esc(catName(dd.wedge)) + '</span>' : '<span class="badge solid">Juegan todos los equipos</span>') +
+        '</div><div class="qbody"><p class="qtext">' + esc(sq.q) + '</p>' + imgTag(sq.img);
+      if (sq.opts.length) {
+        stage += '<ol class="opts' + (sshown && sq.opts.some(sright) ? ' done' : '') + '">' + sq.opts.map(function (o, i) {
+          return '<li' + (sshown && sright(o) ? ' class="right"' : '') + '><b>' + (sshown && sright(o) ? '✓' : String.fromCharCode(65 + i)) + '</b>' + esc(o) + '</li>';
+        }).join('') + '</ol>';
+      }
+      if (sshown) stage += '<div class="answer"><small>' + (isDuel ? 'Respuesta' : 'Respuesta / cómo se gana') + '</small><p>' + esc(sq.a || 'Decide la mesa.') + '</p>' + imgTag(sq.img2) + '</div>';
+      if (!sshown) {
+        stage += '<div class="actions"><button class="btn big" data-action="spshow">' + (sq.a ? 'Ver respuesta' : 'Ya está, ¿quién gana?') + '</button>' +
+          '<button class="btn ghost" data-action="spswap">Cambiar</button><button class="btn ghost" data-action="specback">Cancelar</button></div>';
+      } else if (isDuel) {
+        stage += '<p class="hint" style="margin-top:18px">¿Quién gana el duelo?</p><div class="winners">' +
+          '<button class="btn big ok" data-action="duelwin" data-v="att">Gana ' + esc(team.name) + ' · roba el quesito</button>' +
+          '<button class="btn big ko" data-action="duelwin" data-v="def">Gana ' + esc(g.teams[dd.rival].name) + ' · lo defiende</button>' +
+          '<button class="btn ghost" data-action="spswap" style="border-color:currentColor;color:inherit">Empate: otra pregunta</button></div>';
+      } else {
+        stage += '<p class="hint" style="margin-top:18px">¿Quién gana el reto?</p><div class="winners">' +
+          g.teams.map(function (t, i) { return '<button class="btn big ok" data-action="retowin" data-t="' + i + '">Gana ' + esc(t.name) + '</button>'; }).join('') +
+          '<button class="btn ghost" data-action="retowin" data-t="-1" style="border-color:currentColor;color:inherit">Nadie</button></div>';
+      }
+      stage += '</div></article>';
     } else if (g.phase === 'question' || g.phase === 'answer') {
       var q = g.cur, shown = g.phase === 'answer';
       var right = function (o) { return q.a && norm(o) === norm(q.a); };
@@ -823,7 +926,8 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
   }
 
   function qMeta(q) {
-    var bits = [q.cat, q.hard ? 'Difícil' : 'Normal'];
+    var sp = special(q.cat);
+    var bits = sp ? [sp === 'duelo' ? '⚔️ Duelo' : '🎯 Reto para todos'] : [q.cat, q.hard ? 'Difícil' : 'Normal'];
     if (isOrg() && q.author && !isMine(q)) bits.unshift('De ' + q.author);
     if (q.opts && q.opts.length) bits.push('Tipo test');
     if (q.img || q.img2) bits.push('Con foto');
@@ -831,15 +935,18 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     return bits.join(' · ');
   }
   function qItem(q, acts) {
-    return '<li class="myq k' + catIdx(q.cat) + '"><span class="bar"></span><div class="body"><div class="t">' + esc(q.q) + '</div>' +
+    return '<li class="myq ' + kcls(q.cat) + '"><span class="bar"></span><div class="body"><div class="t">' + esc(q.q) + '</div>' +
       '<div class="m">' + (q.statusHtml || '') + esc(qMeta(q)) + '</div></div><div class="acts">' + acts + '</div></li>';
   }
 
   function formView() {
     var f = S.form, cats = editorCats(), ppl = knownPeople(), chosen = people(f.people);
+    var sp = special(f.cat);
     var catChips = cats.map(function (c, i) {
       return '<button type="button" class="ccat k' + i + '" data-action="f-cat" data-v="' + esc(c) + '" aria-pressed="' + (norm(f.cat) === norm(c)) + '"><span class="dot"></span>' + esc(c) + '</button>';
     }).join('');
+    var spChips = '<button type="button" class="spchip kd" data-action="f-cat" data-v="Duelo" aria-pressed="' + (sp === 'duelo') + '">⚔️ Duelo</button>' +
+      '<button type="button" class="spchip kx" data-action="f-cat" data-v="Reto" aria-pressed="' + (sp === 'reto') + '">🎯 Reto para todos</button>';
     var newCat = cats.length < 6
       ? '<div class="addp"><input type="text" id="f-newcat" placeholder="Nueva categoría" maxlength="40" value="' + esc(S.newCat) + '"><button type="button" class="btn ghost small" data-action="f-addcat">Añadir</button></div>'
       : '';
@@ -856,15 +963,18 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
     }
     return '<section class="card"><form class="form" id="qform" onsubmit="return false">' +
       '<h2>' + (f.editing ? 'Editar pregunta' : 'Nueva pregunta') + '</h2>' +
-      '<div class="step"><div class="lbl">1. ¿De qué categoría es?</div><div class="chips">' + catChips + '</div>' + newCat + '</div>' +
-      '<div class="step"><div class="lbl">2. ¿Es fácil o difícil?<small>Las difíciles salen cuando alguien cae en una casilla de quesito.</small></div>' +
-      '<div class="seg"><button type="button" data-action="f-hard" data-v="0" aria-pressed="' + !f.hard + '">Normal</button><button type="button" data-action="f-hard" data-v="1" aria-pressed="' + f.hard + '">Difícil (quesito)</button></div></div>' +
-      '<div class="step"><label class="lbl" for="f-q">3. Escribe la pregunta</label><textarea id="f-q" data-fld="q" maxlength="400" placeholder="¿Quién…?">' + esc(f.q) + '</textarea>' + slot('img', 'Foto que sale con la pregunta (opcional)') + '</div>' +
-      '<div class="step"><div class="lbl">4. ¿Cómo se responde?</div>' +
+      '<div class="step"><div class="lbl">1. ¿De qué categoría es?</div><div class="chips">' + catChips + '</div>' + newCat +
+      '<div class="lbl" style="margin-top:8px"><small>O es una casilla especial:</small></div><div class="chips">' + spChips + '</div>' +
+      (sp === 'duelo' ? '<p class="stat" style="margin:0">⚔️ Pregunta para un duelo: la contestan dos equipos a la vez y quien gane se queda el quesito. Mejor si es rápida (quién contesta antes) o con respuesta exacta.</p>' : '') +
+      (sp === 'reto' ? '<p class="stat" style="margin:0">🎯 Reto en el que juegan todos los equipos (imitar, dibujar, adivinar…). Quien gane elige el quesito que quiere.</p>' : '') + '</div>' +
+      (sp ? '' : '<div class="step"><div class="lbl">2. ¿Es fácil o difícil?<small>Las difíciles salen cuando alguien cae en una casilla de quesito.</small></div>' +
+      '<div class="seg"><button type="button" data-action="f-hard" data-v="0" aria-pressed="' + !f.hard + '">Normal</button><button type="button" data-action="f-hard" data-v="1" aria-pressed="' + f.hard + '">Difícil (quesito)</button></div></div>') +
+      '<div class="step"><label class="lbl" for="f-q">' + (sp ? '2' : '3') + '. ' + (sp === 'reto' ? 'Escribe el reto' : 'Escribe la pregunta') + '</label><textarea id="f-q" data-fld="q" maxlength="400" placeholder="' + (sp === 'reto' ? 'Imitad a… / Dibujad… / El primero que…' : '¿Quién…?') + '">' + esc(f.q) + '</textarea>' + slot('img', 'Foto que sale con la pregunta (opcional)') + '</div>' +
+      '<div class="step"><div class="lbl">' + (sp ? '3' : '4') + '. ' + (sp === 'reto' ? '¿Cómo se gana? <small>Opcional</small>' : '¿Cómo se responde?') + '</div>' +
       '<div class="seg"><button type="button" data-action="f-mode" data-v="free" aria-pressed="' + (f.mode === 'free') + '">Respuesta libre</button><button type="button" data-action="f-mode" data-v="test" aria-pressed="' + (f.mode === 'test') + '">Tipo test</button></div>' +
-      (f.mode === 'free' ? '<input type="text" id="f-a" data-fld="a" value="' + esc(f.a) + '" maxlength="300" placeholder="La respuesta correcta" aria-label="Respuesta">' : opts) +
+      (f.mode === 'free' ? '<input type="text" id="f-a" data-fld="a" value="' + esc(f.a) + '" maxlength="300" placeholder="' + (sp === 'reto' ? 'Ej.: gana quien lo adivine primero' : 'La respuesta correcta') + '" aria-label="Respuesta">' : opts) +
       '<div class="photos">' + slot('img2', 'Foto que sale con la respuesta (opcional)') + '</div></div>' +
-      '<div class="step"><div class="lbl">5. ¿A quién NO le puede tocar?<small>Toca los nombres de quien sale en la pregunta o se sabe la respuesta. Si está en el equipo que juega, no le saldrá.</small></div>' +
+      '<div class="step"><div class="lbl">' + (sp ? '4' : '5') + '. ¿A quién NO le puede tocar?<small>' + (sp === 'reto' ? 'En los retos juegan todos, así que esto no se usa. Puedes saltarlo.' : 'Toca los nombres de quien sale en la pregunta o se sabe la respuesta. Si está en un equipo que juega, no le saldrá.') + '</small></div>' +
       (ppl.length ? '<div class="chips">' + ppl.map(function (p) {
         return '<button type="button" class="pchip" data-action="f-person" data-v="' + esc(p) + '" aria-pressed="' + (chosen.indexOf(norm(p)) > -1) + '">' + esc(p) + '</button>';
       }).join('') + '</div>' : '') +
@@ -953,8 +1063,8 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       if (clean.length < 2) { S.formErr = 'Pon al menos dos opciones.'; return false; }
       if (!right) { S.formErr = 'Marca cuál es la opción correcta.'; return false; }
       opts = clean; a = right;
-    } else if (!a) { S.formErr = 'Escribe la respuesta.'; return false; }
-    var q = { id: f.editing || ('q-' + rid()), cat: f.cat, hard: f.hard, people: f.people, q: f.q.trim(), opts: opts, a: a,
+    } else if (!a && special(f.cat) !== 'reto') { S.formErr = 'Escribe la respuesta.'; return false; }
+    var q = { id: f.editing || ('q-' + rid()), cat: special(f.cat) ? SPNAME[special(f.cat)] : f.cat, hard: special(f.cat) ? false : f.hard, people: f.people, q: f.q.trim(), opts: opts, a: a,
       img: f.img, img2: f.img2, author: f.author || S.local.author };
     var ai = S.local.added.findIndex(function (r) { return r.id === q.id; });
     if (ai > -1) S.local.added[ai] = q;
@@ -1024,6 +1134,49 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       case 'setturn': if (g && g.phase === 'ready') { g.turn = +d.t; S.msg = ''; saveGame(); render(); } break;
       case 'pick': choose(+d.i); top(); break;
       case 'show': g.phase = 'answer'; saveGame(); render(); break;
+      case 'duel':
+        if (!g || g.phase !== 'ready') break;
+        if (!g.teams.some(function (t, i) { return i !== g.turn && stealable(g.teams[g.turn], t).length; })) { S.msg = 'Ningún equipo tiene quesitos que os falten: no hay nada que robar todavía.'; render(); break; }
+        if (!SPQ.duelo.length) { S.msg = 'Todavía no hay preguntas de duelo. Añádelas en «Crear preguntas» (categoría ⚔️ Duelo).'; render(); break; }
+        g.wedgeNext = false; g.duel = { rival: null, wedge: null }; g.phase = 'duel-pick'; S.msg = ''; saveGame(); render(); top(); break;
+      case 'duelrival': g.duel.rival = d.t === '' ? null : +d.t; saveGame(); render(); break;
+      case 'duelwedge': {
+        g.duel.wedge = +d.i;
+        var dr = drawSpecial('duelo', [g.teams[g.turn], g.teams[g.duel.rival]]);
+        if (dr.error) { S.msg = dr.error; g.phase = 'ready'; g.duel = null; saveGame(); render(); break; }
+        g.cur = dr.q; g.phase = 'sp-q'; S.msg = dr.note; saveGame(); render(); top(); break;
+      }
+      case 'reto': {
+        if (!g || g.phase !== 'ready') break;
+        var rr = drawSpecial('reto', []);
+        if (rr.error) { S.msg = rr.error; render(); break; }
+        g.wedgeNext = false; g.cur = rr.q; g.phase = 'sp-q'; S.msg = rr.note; saveGame(); render(); top(); break;
+      }
+      case 'spshow': g.phase = 'sp-a'; saveGame(); render(); break;
+      case 'spswap': {
+        var isD = g.cur.kind === 'duelo';
+        var sw = drawSpecial(g.cur.kind, isD ? [g.teams[g.turn], g.teams[g.duel.rival]] : [], g.cur.id);
+        if (!sw.error) { g.cur = sw.q; S.msg = sw.note || (g.phase === 'sp-a' && isD ? 'Empate: desempate con otra pregunta.' : ''); }
+        g.phase = 'sp-q'; saveGame(); render(); break;
+      }
+      case 'specback': g.phase = 'ready'; g.cur = null; g.duel = null; S.msg = ''; saveGame(); render(); break;
+      case 'duelwin': {
+        var at = g.teams[g.turn], df = g.teams[g.duel.rival], wi = g.duel.wedge;
+        if (d.v === 'att') { df.won[wi] = false; at.won[wi] = true; S.msg = '⚔️ ¡' + at.name + ' roba el quesito de ' + catName(wi) + ' a ' + df.name + '!'; }
+        else S.msg = '🛡️ ' + df.name + ' defiende su quesito de ' + catName(wi) + '.';
+        S.msg += ' Turno de ' + g.teams[(g.turn + 1) % g.teams.length].name + '.';
+        nextTurn(); saveGame(); render(); top(); break;
+      }
+      case 'retowin':
+        if (d.t === '-1') { S.msg = 'Nadie gana el reto. Turno de ' + g.teams[(g.turn + 1) % g.teams.length].name + '.'; nextTurn(); }
+        else { g.retoWin = +d.t; g.phase = 'reto-pick'; g.cur = null; }
+        saveGame(); render(); top(); break;
+      case 'retowedge': {
+        var rw = g.teams[g.retoWin];
+        if (+d.i >= 0) { rw.won[+d.i] = true; S.msg = '🎯 ' + rw.name + ' se lleva el quesito de ' + catName(+d.i) + '.'; } else S.msg = '';
+        S.msg += ' Turno de ' + g.teams[(g.turn + 1) % g.teams.length].name + '.';
+        nextTurn(); saveGame(); render(); top(); break;
+      }
       case 'swap': swap(); break;
       case 'back': g.wedgeNext = g.wedgeSq; g.phase = 'ready'; g.cat = null; g.cur = null; g.final = false; g.wedgeSq = false; S.msg = ''; saveGame(); render(); break;
       case 'ok': judge(true); top(); break;
@@ -1068,6 +1221,7 @@ label.btn:focus-within { outline: 3px solid var(--fg); outline-offset: 2px; }
       case 'f-addcat': {
         var nc = (document.getElementById('f-newcat') || {}).value || '';
         nc = nc.trim().slice(0, 40);
+        if (special(nc)) { f.cat = SPNAME[special(nc)]; S.newCat = ''; render(); break; }
         if (nc) { f.cat = nc; S.newCat = ''; S.extraCats = (S.extraCats || []).concat(nc); }
         render(); break;
       }
